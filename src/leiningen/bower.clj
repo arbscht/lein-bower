@@ -9,9 +9,6 @@
             [robert.hooke]
             [leiningen.deps]))
 
-(def ^:dynamic *bower-package-file* "bower.json")
-(def ^:dynamic *bower-config-file* ".bowerrc")
-
 (defn project->bowerrc
   [project]
   (json/generate-string
@@ -30,34 +27,36 @@
   [project & args]
   (exec (project :root) (cons "bower" args)))
 
-(defmacro with-bower-env [project-sym & forms]
-  `(binding [*bower-package-file* (get-in ~project-sym [:bower :package-file] *bower-package-file*)
-             *bower-config-file* (get-in ~project-sym [:bower :config-file] *bower-config-file*)]
-     (environmental-consistency ~project-sym *bower-package-file* *bower-config-file*)
-     ~@forms))
+(defn bower-package-file
+  [project]
+  (get-in project [:bower :package-file] "bower.json"))
 
-(defmacro with-bower-files [project & forms]
-  `(with-bower-env ~project
-     (with-json-file
-       *bower-package-file* (project->component ~project) ~project
-       (with-json-file
-         *bower-config-file* (project->bowerrc ~project) ~project
-         ~@forms))))
+(defn bower-config-file
+  [project]
+  (get-in project [:bower :config-file] ".bowerrc"))
 
 (defn bower
   "Invoke the Bower component manager."
   ([project]
-     (with-bower-env project
-       (println (help/help-for "bower"))
-       (main/abort)))
+     (environmental-consistency project (bower-package-file project) (bower-config-file project))
+     (println (help/help-for "bower"))
+     (main/abort))
   ([project & args]
-     (with-bower-files project
-       (apply invoke project args))))
+     (environmental-consistency project)
+     (with-json-file
+       (bower-package-file project) (project->component project) project
+       (with-json-file
+         (bower-config-file project) (project->bowerrc project) project
+         (apply invoke project args)))))
 
 (defn install-deps
   [project]
-  (with-bower-files project
-    (invoke project "run-script" "bower")))
+  (environmental-consistency project)
+  (with-json-file
+    (bower-package-file project) (project->component project) project
+    (with-json-file
+      (bower-config-file project) (project->bowerrc project) project
+      (invoke project "run-script" "bower"))))
 
 (defn wrap-deps
   [f & args]
