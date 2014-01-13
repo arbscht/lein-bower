@@ -9,10 +9,13 @@
             [robert.hooke]
             [leiningen.deps]))
 
+(def ^:dynamic *bower-package-file* "bower.json")
+(def ^:dynamic *bower-config-file* ".bowerrc")
+
 (defn project->bowerrc
   [project]
   (json/generate-string
-   {:directory (project :bower-directory)}))
+   {:directory (get-in project [:bower :directory])}))
 
 (defn project->component
   [project]
@@ -27,28 +30,34 @@
   [project & args]
   (exec (project :root) (cons "bower" args)))
 
+(defmacro with-bower-env [project-sym & forms]
+  `(binding [*bower-package-file* (get-in ~project-sym [:bower :package-file] *bower-package-file*)
+             *bower-config-file* (get-in ~project-sym [:bower :config-file] *bower-config-file*)]
+     (environmental-consistency ~project-sym *bower-package-file* *bower-config-file*)
+     ~@forms))
+
+(defmacro with-bower-files [project & forms]
+  `(with-bower-env ~project
+     (with-json-file
+       *bower-package-file* (project->component ~project) ~project
+       (with-json-file
+         *bower-config-file* (project->bowerrc ~project) ~project
+         ~@forms))))
+
 (defn bower
   "Invoke the Bower component manager."
   ([project]
-     (environmental-consistency project "component.json" ".bowerrc")
-     (println (help/help-for "bower"))
-     (main/abort))
+     (with-bower-env project
+       (println (help/help-for "bower"))
+       (main/abort)))
   ([project & args]
-     (environmental-consistency project "component.json" ".bowerrc")
-     (with-json-file
-    "component.json" (project->component project) project
-    (with-json-file
-      ".bowerrc" (project->bowerrc project) project
-      (apply invoke project args)))))
+     (with-bower-files project
+       (apply invoke project args))))
 
 (defn install-deps
   [project]
-  (environmental-consistency project)
-  (with-json-file
-    "component.json" (project->component project) project
-    (with-json-file
-      ".bowerrc" (project->bowerrc project) project
-      (invoke project "run-script" "bower"))))
+  (with-bower-files project
+    (invoke project "run-script" "bower")))
 
 (defn wrap-deps
   [f & args]
